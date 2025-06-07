@@ -4,6 +4,8 @@ defmodule ExUpcloud.Servers do
   import ExUpcloud.Request
 
   alias ExUpcloud.Config
+  alias ExUpcloud.Labels
+  alias ExUpcloud.Utils
 
   @stop_timeout 180
 
@@ -20,6 +22,7 @@ defmodule ExUpcloud.Servers do
               &has_label(server, &1 |> elem(0) |> to_string(), &1 |> elem(1) |> to_string())
             )
           end)
+          |> Enum.map(&ExUpcloud.Server.parse/1)
 
         {:ok, servers}
 
@@ -38,15 +41,21 @@ defmodule ExUpcloud.Servers do
     end
   end
 
-  def find(uuid, %Config{} = config) do
+  def find(%Config{} = config, uuid) do
     case get("/1.3/server/#{uuid}", config) do
-      {:ok, %Req.Response{status: 200, body: body}} -> {:ok, Map.get(body, "server")}
-      {:error, reason} -> {:error, reason}
+      {:ok, %Req.Response{status: 200, body: body}} ->
+        {:ok, body |> Map.get("server") |> ExUpcloud.Server.parse()}
+
+      {:ok, %Req.Response{body: body}} ->
+        {:error, body}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
-  def find!(uuid, %Config{} = config) do
-    case find(uuid, config) do
+  def find!(%Config{} = config, uuid) do
+    case find(config, uuid) do
       {:ok, server} ->
         server
 
@@ -55,7 +64,7 @@ defmodule ExUpcloud.Servers do
     end
   end
 
-  def stop(uuid, %Config{} = config) do
+  def stop(%Config{} = config, uuid) do
     result =
       post(
         "/1.3/server/#{uuid}/stop",
@@ -74,14 +83,14 @@ defmodule ExUpcloud.Servers do
     end
   end
 
-  def stop!(uuid, %Config{} = config) do
+  def stop!(%Config{} = config, uuid) do
     case stop(uuid, config) do
       :ok -> :ok
       {:error, reason} -> raise "Could not stop server: #{inspect(reason)}"
     end
   end
 
-  def start(uuid, %Config{} = config) do
+  def start(%Config{} = config, uuid) do
     result =
       post(
         "/1.3/server/#{uuid}/start",
@@ -99,120 +108,136 @@ defmodule ExUpcloud.Servers do
     end
   end
 
-  def start!(uuid, %Config{} = config) do
+  def start!(%Config{} = config, uuid) do
     case start(uuid, config) do
       :ok -> :ok
       {:error, reason} -> raise "Could not start server: #{inspect(reason)}"
     end
   end
 
-  def remove!(uuid, %Config{} = config) do
-    %Req.Response{status: 204} =
-      delete!("/1.3/server/#{uuid}?storages=true&backups=delete", nil, config)
+  @remove_opts NimbleOptions.new!(
+                 delete_storages: [
+                   type: :boolean,
+                   doc: "Whether to remove attached storage devices.",
+                   default: false
+                 ],
+                 delete_backups: [
+                   type: :boolean,
+                   doc: "Whether to delete backups.",
+                   default: false
+                 ]
+               )
 
-    :ok
+  def remove(%Config{} = config, uuid, opts \\ []) do
+    opts = NimbleOptions.validate!(opts, @remove_opts)
+
+    query =
+      if opts[:delete_storages] do
+        %{storages: "true"}
+      else
+        %{}
+      end
+
+    query =
+      if opts[:delete_backups] do
+        Map.put(query, :backups, "delete")
+      else
+        query
+      end
+
+    query = if Enum.empty?(query), do: "", else: "?" <> URI.encode_query(query)
+
+    result = delete("/1.3/server/#{uuid}#{query}", nil, config)
+
+    case result do
+      {:ok, %Req.Response{status: 204}} -> :ok
+      {:ok, %Req.Response{body: body}} -> {:error, body}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
-  def create(
+  @create_opts NimbleOptions.new!(
+                 plan: [
+                   type: :string,
+                   doc: "Plan to use for the server, e.g., `1xCPU-1GB`.",
+                   default: "1xCPU-1GB"
+                 ],
+                 user_data: [
+                   type: :string,
+                   doc: "User data to be passed to the server."
+                 ],
+                 ssh_key: [
+                   type: :string,
+                   doc: "SSH key to be used for the server.",
+                   required: false
+                 ],
+                 interfaces: [
+                   type: {:list, {:struct, ExUpcloud.Interface}},
+                   required: true
+                 ],
+                 storages: [
+                   type: {:list, {:struct, ExUpcloud.ServerStorageDevice}},
+                   doc: "List of storage devices to attach to the server.",
+                   default: []
+                 ],
+                 labels: [
+                   type: :map,
+                   default: %{}
+                 ],
+                 hostname: [
+                   type: :string,
+                   doc: "Hostname for the server.",
+                   required: true
+                 ],
+                 title: [
+                   type: :string,
+                   doc: "Title for the server.",
+                   required: false
+                 ],
+                 metadata: [
+                   type: :boolean,
+                   doc: "Whether to include metadata in the server creation.",
+                   default: true
+                 ],
+                 password_delivery: [
+                   type: :string,
+                   doc: "Method of password delivery. Default is 'none'.",
+                   default: "none"
+                 ]
+               )
+
+  def create(%Config{zone: zone} = config, opts \\ []) do
+    opts = NimbleOptions.validate!(opts, @create_opts)
+
+    body =
+      Map.reject(
         %{
-          partition: partition,
-          user_data: user_data,
-          environment: environment,
-          app: app,
-          plan: plan,
-          ssh_key: ssh_key,
-          network_uuid: network_uuid,
-          platform_storage_uuid: platform_storage_uuid,
-          secrets_storage_uuid: secrets_storage_uuid
-        },
-        %Config{zone: zone} = config
-      ) do
-    labels = [
-      %{
-        key: "partition",
-        value: partition
-      },
-      %{
-        key: "app",
-        value: app
-      },
-      %{
-        key: "environment",
-        value: environment
-      }
-    ]
-
-    plan = plan || "1xCPU-1GB"
-
-    body = %{
-      server: %{
-        labels: %{label: labels},
-        hostname: "twine-core-#{environment}-#{partition}",
-        title: "twine-core-#{environment}-#{partition}",
-        password_delivery: "none",
-        zone: zone,
-        plan: plan,
-        metadata: "yes",
-        user_data: user_data,
-        login_user: %{
-          ssh_keys: %{
-            ssh_key: [
-              ssh_key
-            ]
-          }
-        },
-        storage_devices: %{
-          storage_device:
-            Enum.filter(
-              [
-                %{
-                  action: "clone",
-                  storage: platform_storage_uuid,
-                  labels: labels,
-                  title: "Debian Bookworm - Can be safely deleted",
-                  size: 20,
-                  tier: "maxiops"
-                },
-                if is_nil(secrets_storage_uuid) do
-                  nil
-                else
-                  %{action: "attach", storage: secrets_storage_uuid}
-                end
-              ],
-              &(&1 != nil)
-            )
-        },
-        networking: %{
-          interfaces: %{
-            interface: [
-              %{
-                ip_addresses: %{
-                  ip_address: [
-                    %{
-                      family: "IPv4"
-                    }
-                  ]
-                },
-                type: "utility"
-              },
-              %{
-                type: "private",
-                network: network_uuid,
-                source_ip_filtering: "no",
-                ip_addresses: %{
-                  ip_address: [
-                    %{
-                      family: "IPv4",
-                      dhcp_provided: "yes"
-                    }
-                  ]
-                }
+          server: %{
+            labels: %{label: Labels.to_payload(opts[:labels])},
+            hostname: opts[:hostname],
+            title: opts[:title],
+            password_delivery: opts[:password_delivery],
+            zone: zone,
+            plan: opts[:plan],
+            metadata: Utils.yesno(opts[:metadata]),
+            user_data: opts[:user_data],
+            login_user: %{
+              ssh_keys: %{
+                ssh_key: [
+                  opts[:ssh_key]
+                ]
               }
-            ]
+            },
+            storage_devices: %{
+              storage_device: Enum.map(opts[:storages], &ExUpcloud.ServerStorageDevice.to_payload/1)
+            },
+            networking: %{
+              interfaces: %{interface: Enum.map(opts[:interfaces], &ExUpcloud.Interface.to_payload/1)}
+            }
           }
-        }
-      }
-    }
+        },
+        fn {_, v} -> is_nil(v) end
+      )
 
     response =
       post(
@@ -223,21 +248,21 @@ defmodule ExUpcloud.Servers do
 
     case response do
       {:ok, %Req.Response{status: 202, body: body}} ->
-        {:ok, Map.get(body, "server")}
+        {:ok, body |> Map.get("server") |> ExUpcloud.Server.parse()}
 
       {:error, reason} ->
         {:error, reason}
     end
   end
 
-  def create!(params, %Config{} = config) do
-    case create(params, config) do
+  def create!(%Config{} = config, opts \\ []) do
+    case create(config, opts) do
       {:ok, server} -> server
       {:error, reason} -> raise "Could not create server: #{inspect(reason)}"
     end
   end
 
-  def detach_storage!(server_uuid, storage_uuid, %Config{} = config) do
+  def detach_storage(%Config{} = config, server_uuid, storage_uuid) do
     result =
       post(
         "/1.3/server/#{server_uuid}/storage/detach",
@@ -251,7 +276,10 @@ defmodule ExUpcloud.Servers do
 
     case result do
       {:ok, %Req.Response{status: 200, body: body}} ->
-        {:ok, Map.get(body, "server")}
+        {:ok, body |> Map.get("server") |> ExUpcloud.Server.parse()}
+
+      {:ok, %Req.Response{body: body}} ->
+        {:error, body}
 
       {:error, reason} ->
         {:error, reason}
@@ -259,7 +287,7 @@ defmodule ExUpcloud.Servers do
   end
 
   def get_server_by_uuid(servers, server_uuid) do
-    Enum.find(servers, fn server -> server["uuid"] == server_uuid end)
+    Enum.find(servers, fn server -> server.uuid == server_uuid end)
   end
 
   def get_server_ip!(server, network_uuid) do
@@ -277,21 +305,21 @@ defmodule ExUpcloud.Servers do
     end
   end
 
-  def get_server_state!(server_uuid, %Config{} = config) do
-    server_uuid
-    |> find!(config)
-    |> Map.get("state")
+  def get_server_state!(%Config{} = config, uuid) do
+    config
+    |> find!(uuid)
+    |> Map.get(:state)
   end
 
-  def wait_for_server_state!(server_uuid, required_state, timeout, %Config{} = config) do
-    state = get_server_state!(server_uuid, config)
+  def wait_for_server_state!(%Config{} = config, server_uuid, required_state, timeout \\ 180) do
+    state = get_server_state!(config, server_uuid)
 
     if state != required_state do
       if timeout - 1 <= 0 do
         raise "Server did not reach state #{required_state} within specified timeout"
       else
         :timer.sleep(1000)
-        wait_for_server_state!(server_uuid, required_state, timeout - 1, config)
+        wait_for_server_state!(config, server_uuid, required_state, timeout - 1)
       end
     end
 
