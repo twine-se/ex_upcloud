@@ -16,7 +16,8 @@ defmodule ExUpcloud.Storage do
           tier: String.t(),
           zone: String.t(),
           labels: map(),
-          created: DateTime.t()
+          created: DateTime.t(),
+          servers: [String.t()]
         }
 
   defstruct [
@@ -29,7 +30,8 @@ defmodule ExUpcloud.Storage do
     :tier,
     :zone,
     :labels,
-    :created
+    :created,
+    :servers
   ]
 
   @list_opts [
@@ -161,7 +163,8 @@ defmodule ExUpcloud.Storage do
       tier: payload["tier"],
       zone: payload["zone"],
       labels: Label.parse(payload["labels"]),
-      created: created
+      created: created,
+      servers: payload |> Map.get("servers", %{}) |> Map.get("server", [])
     }
   end
 end
