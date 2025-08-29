@@ -147,24 +147,23 @@ defmodule ExUpcloud.Storage do
   end
 
   def parse(payload) do
-    created =
-      case payload["created"] do
-        nil -> nil
-        _ -> DateTime.from_iso8601(payload["created"])
-      end
-
-    %__MODULE__{
-      uuid: payload["uuid"] || payload["storage"],
-      title: payload["title"] || payload["storage_title"],
-      type: payload["type"],
-      access: payload["access"],
-      size: payload["size"] || payload["storage_size"],
-      state: payload["state"],
-      tier: payload["tier"],
-      zone: payload["zone"],
-      labels: Label.parse(payload["labels"]),
-      created: created,
-      servers: payload |> Map.get("servers", %{}) |> Map.get("server", [])
-    }
+    with {:ok, created, _} <- parse_date(payload["created"]) do
+      %__MODULE__{
+        uuid: payload["uuid"] || payload["storage"],
+        title: payload["title"] || payload["storage_title"],
+        type: payload["type"],
+        access: payload["access"],
+        size: payload["size"] || payload["storage_size"],
+        state: payload["state"],
+        tier: payload["tier"],
+        zone: payload["zone"],
+        labels: Label.parse(payload["labels"]),
+        created: created,
+        servers: payload |> Map.get("servers", %{}) |> Map.get("server", [])
+      }
+    end
   end
+
+  defp parse_date(nil), do: {:ok, nil, 0}
+  defp parse_date(date_str), do: DateTime.from_iso8601(date_str)
 end
