@@ -9,8 +9,12 @@ defmodule ExUpcloud.Request do
   @content_type "application/json"
   @retryable_status_codes [408, 429, 500, 502, 503, 504]
 
-  def get(path, %Config{} = config) do
-    result = [url: @base_url <> path, retry: &retry?/2] |> config_opts(config, []) |> Req.request()
+  def get(path, %Config{} = config, opts \\ []) do
+    result =
+      [url: @base_url <> path, retry: &retry?/2]
+      |> config_opts(config, [])
+      |> Keyword.merge(opts)
+      |> Req.request()
 
     case result do
       {:ok, %Response{status: status} = response} when status in 200..204 -> {:ok, response}
@@ -19,23 +23,24 @@ defmodule ExUpcloud.Request do
     end
   end
 
-  def post(path, body, %Config{} = config), do: send(:post, path, body, config)
-  def post!(path, body, %Config{} = config), do: send!(:post, path, body, config)
-  def put(path, body, %Config{} = config), do: send(:put, path, body, config)
-  def put!(path, body, %Config{} = config), do: send!(:put, path, body, config)
-  def patch(path, body, %Config{} = config), do: send(:patch, path, body, config)
-  def patch!(path, body, %Config{} = config), do: send!(:patch, path, body, config)
-  def delete(path, body, %Config{} = config), do: send(:delete, path, body, config)
-  def delete!(path, body, %Config{} = config), do: send!(:delete, path, body, config)
+  def post(path, body, %Config{} = config, opts \\ []), do: send(:post, path, body, config, opts)
+  def post!(path, body, %Config{} = config, opts \\ []), do: send!(:post, path, body, config, opts)
+  def put(path, body, %Config{} = config, opts \\ []), do: send(:put, path, body, config, opts)
+  def put!(path, body, %Config{} = config, opts \\ []), do: send!(:put, path, body, config, opts)
+  def patch(path, body, %Config{} = config, opts \\ []), do: send(:patch, path, body, config, opts)
+  def patch!(path, body, %Config{} = config, opts \\ []), do: send!(:patch, path, body, config, opts)
+  def delete(path, body, %Config{} = config, opts \\ []), do: send(:delete, path, body, config, opts)
+  def delete!(path, body, %Config{} = config, opts \\ []), do: send!(:delete, path, body, config, opts)
 
-  defp send(method, path, body, %Config{} = config) do
+  defp send(method, path, body, %Config{} = config, opts) do
     [method: method, url: @base_url <> path, json: body, retry: &retry?/2]
     |> config_opts(config, content_type: @content_type)
+    |> Keyword.merge(opts)
     |> Req.request()
   end
 
-  defp send!(method, path, body, %Config{} = config) do
-    case send(method, path, body, config) do
+  defp send!(method, path, body, %Config{} = config, opts) do
+    case send(method, path, body, config, opts) do
       {:ok, response} -> response
       {:error, response} -> raise "Error: #{inspect(response)}"
     end
