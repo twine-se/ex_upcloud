@@ -206,33 +206,33 @@ defmodule ExUpcloud.Servers do
                  ]
                )
 
-  def create(%Config{zone: zone} = config, opts \\ []) do
-    opts = NimbleOptions.validate!(opts, @create_opts)
+  def create(%Config{zone: zone} = config, create_opts, opts \\ []) do
+    create_opts = NimbleOptions.validate!(create_opts, @create_opts)
 
     body =
       Map.reject(
         %{
           server: %{
-            labels: %{label: Labels.to_payload(opts[:labels])},
-            hostname: opts[:hostname],
-            title: opts[:title],
-            password_delivery: opts[:password_delivery],
+            labels: %{label: Labels.to_payload(create_opts[:labels])},
+            hostname: create_opts[:hostname],
+            title: create_opts[:title],
+            password_delivery: create_opts[:password_delivery],
             zone: zone,
-            plan: opts[:plan],
-            metadata: Utils.yesno(opts[:metadata]),
-            user_data: opts[:user_data],
+            plan: create_opts[:plan],
+            metadata: Utils.yesno(create_opts[:metadata]),
+            user_data: create_opts[:user_data],
             login_user: %{
               ssh_keys: %{
                 ssh_key: [
-                  opts[:ssh_key]
+                  create_opts[:ssh_key]
                 ]
               }
             },
             storage_devices: %{
-              storage_device: Enum.map(opts[:storages], &ExUpcloud.ServerStorageDevice.to_payload/1)
+              storage_device: Enum.map(create_opts[:storages], &ExUpcloud.ServerStorageDevice.to_payload/1)
             },
             networking: %{
-              interfaces: %{interface: Enum.map(opts[:interfaces], &ExUpcloud.Interface.to_payload/1)}
+              interfaces: %{interface: Enum.map(create_opts[:interfaces], &ExUpcloud.Interface.to_payload/1)}
             }
           }
         },
@@ -243,7 +243,8 @@ defmodule ExUpcloud.Servers do
       post(
         "/1.3/server",
         body,
-        config
+        config,
+        opts
       )
 
     case response do
@@ -255,8 +256,8 @@ defmodule ExUpcloud.Servers do
     end
   end
 
-  def create!(%Config{} = config, opts \\ []) do
-    case create(config, opts) do
+  def create!(%Config{} = config, create_opts, opts \\ []) do
+    case create(config, create_opts, opts) do
       {:ok, server} -> server
       {:error, reason} -> raise "Could not create server: #{inspect(reason)}"
     end
