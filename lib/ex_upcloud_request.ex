@@ -13,8 +13,7 @@ defmodule ExUpcloud.Request do
     result =
       [url: @base_url <> path, retry: &retry?/2]
       |> config_opts(config, [])
-      |> Keyword.merge(opts)
-      |> Req.request()
+      |> Req.request(opts)
 
     case result do
       {:ok, %Response{status: status} = response} when status in 200..204 -> {:ok, response}
@@ -35,8 +34,7 @@ defmodule ExUpcloud.Request do
   defp send(method, path, body, %Config{} = config, opts) do
     [method: method, url: @base_url <> path, json: body, retry: &retry?/2]
     |> config_opts(config, content_type: @content_type)
-    |> Keyword.merge(opts)
-    |> Req.request()
+    |> Req.request(opts)
   end
 
   defp send!(method, path, body, %Config{} = config, opts) do
