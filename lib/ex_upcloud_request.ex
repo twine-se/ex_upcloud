@@ -13,7 +13,9 @@ defmodule ExUpcloud.Request do
     result =
       [url: @base_url <> path, retry: &retry?/2]
       |> config_opts(config, [])
-      |> Req.request(opts)
+      |> Req.new()
+      |> Req.merge(opts)
+      |> Req.request()
 
     case result do
       {:ok, %Response{status: status} = response} when status in 200..204 -> {:ok, response}
@@ -32,9 +34,13 @@ defmodule ExUpcloud.Request do
   def delete!(path, body, %Config{} = config, opts \\ []), do: send!(:delete, path, body, config, opts)
 
   defp send(method, path, body, %Config{} = config, opts) do
+    IO.puts(" ➡️  #{String.upcase(to_string(method))} #{path}, #{inspect(opts)}")
+
     [method: method, url: @base_url <> path, json: body, retry: &retry?/2]
     |> config_opts(config, content_type: @content_type)
-    |> Req.request(opts)
+    |> Req.new()
+    |> Req.merge(opts)
+    |> Req.request()
   end
 
   defp send!(method, path, body, %Config{} = config, opts) do
