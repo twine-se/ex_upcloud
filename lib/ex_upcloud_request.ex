@@ -61,6 +61,8 @@ defmodule ExUpcloud.Request do
   defp retry?(%Request{method: :get}, %Req.TransportError{reason: :closed}),
     do: Application.get_env(:ex_upcloud, :retry_on_closed, true)
 
+  defp retry?(%Request{method: :get}, %Req.TransportError{reason: :einval}), do: true
+
   defp retry?(_, _), do: false
 
   defp config_opts(opts, %Config{username: username, password: password}, headers) do
