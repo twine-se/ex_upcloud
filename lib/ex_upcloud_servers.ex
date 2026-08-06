@@ -73,20 +73,19 @@ defmodule ExUpcloud.Servers do
                timeout: [
                  type: :pos_integer,
                  doc:
-                   "Seconds to wait for a soft stop before applying `timeout_action`. UpCloud accepts 1-600.",
+                   "Seconds to wait for a soft stop before UpCloud hard stops the server anyway. " <>
+                     "UpCloud accepts 1-600.",
                  default: @stop_timeout
-               ],
-               timeout_action: [
-                 type: {:in, ["ignore", "destroy"]},
-                 doc:
-                   "What to do when `timeout` expires. `ignore` abandons the stop and leaves the " <>
-                     "server running; `destroy` forces a hard stop.",
-                 default: "ignore"
                ]
              )
 
   @doc """
   Stop a server.
+
+  A soft stop that outlives its `timeout` is hard stopped by UpCloud, so the
+  call always terminates the server. There is no `timeout_action` here — that
+  attribute belongs to `restart_server`, and `stop_server` rejects it with
+  `UNKNOWN_ATTRIBUTE`.
 
   ## Options
 
@@ -101,8 +100,7 @@ defmodule ExUpcloud.Servers do
         %{
           stop_server: %{
             stop_type: opts[:stop_type],
-            timeout: opts[:timeout],
-            timeout_action: opts[:timeout_action]
+            timeout: opts[:timeout]
           }
         },
         config
