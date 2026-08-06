@@ -1,0 +1,58 @@
+name: Test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A PR that gets a second push does not need the first run to finish. `main`
+# is excluded from cancellation so every merged commit keeps a verdict.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  MIX_ENV: test
+
+jobs:
+  test:
+    name: Compile, format, test
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      # Versions come from .tool-versions so CI and local development cannot
+      # drift. `strict` fails loudly rather than silently resolving something
+      # near enough.
+      - name: Set up Elixir
+        uses: erlef/setup-beam@fc68ffb90438ef2936bbb3251622353b3dcb2f93 # v1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+
+      # Exact key only, no restore-keys: this project builds from cold in a few
+      # seconds, and a partially-stale _build is a worse failure mode than a
+      # cache miss.
+      - name: Restore deps and build
+        id: cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            deps
+            _build/test
+          key: v1-${{ runner.os }}-mix-${{ hashFiles('.tool-versions', 'mix.lock') }}
+
+      - name: Fetch dependencies
+        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+        run: mix deps.get
+
+      - name: Compile
+        run: mix compile --warnings-as-errors
+
+      - name: Check formatting
+        run: mix format --check-formatted
+
+      - name: Run tests
+        run: mix test --raise

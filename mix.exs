@@ -5,7 +5,7 @@ defmodule ExUpcloud.MixProject do
     [
       app: :ex_upcloud,
       version: "0.1.0",
-      elixir: "~> 1.18",
+      elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       package: package(),
       description: description(),
@@ -23,7 +23,7 @@ defmodule ExUpcloud.MixProject do
 
   defp deps do
     [
-      {:req, "~> 0.5.6"},
+      {:req, "~> 0.7.2"},
       {:styler, "~> 1.4", only: [:dev, :test], runtime: false},
       {:nimble_options, "~> 1.0"}
     ]
