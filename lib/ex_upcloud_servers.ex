@@ -64,14 +64,45 @@ defmodule ExUpcloud.Servers do
     end
   end
 
-  def stop(%Config{} = config, uuid) do
+  @stop_opts NimbleOptions.new!(
+               stop_type: [
+                 type: {:in, ["soft", "hard"]},
+                 doc: "`soft` sends an ACPI shutdown and lets the OS stop its services; `hard` cuts power.",
+                 default: "soft"
+               ],
+               timeout: [
+                 type: :pos_integer,
+                 doc:
+                   "Seconds to wait for a soft stop before applying `timeout_action`. UpCloud accepts 1-600.",
+                 default: @stop_timeout
+               ],
+               timeout_action: [
+                 type: {:in, ["ignore", "destroy"]},
+                 doc:
+                   "What to do when `timeout` expires. `ignore` abandons the stop and leaves the " <>
+                     "server running; `destroy` forces a hard stop.",
+                 default: "ignore"
+               ]
+             )
+
+  @doc """
+  Stop a server.
+
+  ## Options
+
+  #{NimbleOptions.docs(@stop_opts)}
+  """
+  def stop(%Config{} = config, uuid, opts \\ []) do
+    opts = NimbleOptions.validate!(opts, @stop_opts)
+
     result =
       post(
         "/1.3/server/#{uuid}/stop",
         %{
           stop_server: %{
-            stop_type: "soft",
-            timeout: @stop_timeout
+            stop_type: opts[:stop_type],
+            timeout: opts[:timeout],
+            timeout_action: opts[:timeout_action]
           }
         },
         config
@@ -79,12 +110,13 @@ defmodule ExUpcloud.Servers do
 
     case result do
       {:ok, %Req.Response{status: 200}} -> :ok
+      {:ok, %Req.Response{body: body}} -> {:error, body}
       {:error, reason} -> {:error, reason}
     end
   end
 
-  def stop!(%Config{} = config, uuid) do
-    case stop(uuid, config) do
+  def stop!(%Config{} = config, uuid, opts \\ []) do
+    case stop(config, uuid, opts) do
       :ok -> :ok
       {:error, reason} -> raise "Could not stop server: #{inspect(reason)}"
     end
@@ -104,12 +136,13 @@ defmodule ExUpcloud.Servers do
 
     case result do
       {:ok, %Req.Response{status: 200}} -> :ok
+      {:ok, %Req.Response{body: body}} -> {:error, body}
       {:error, reason} -> {:error, reason}
     end
   end
 
   def start!(%Config{} = config, uuid) do
-    case start(uuid, config) do
+    case start(config, uuid) do
       :ok -> :ok
       {:error, reason} -> raise "Could not start server: #{inspect(reason)}"
     end
