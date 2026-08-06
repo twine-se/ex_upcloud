@@ -58,13 +58,8 @@ defmodule ExUpcloud.ServersTest do
 
       assert :ok = Servers.stop(@config, @uuid)
 
-      assert %{
-               "stop_server" => %{
-                 "stop_type" => "soft",
-                 "timeout" => 180,
-                 "timeout_action" => "ignore"
-               }
-             } = emitted_body()
+      assert %{"stop_server" => stop_server} = emitted_body()
+      assert stop_server == %{"stop_type" => "soft", "timeout" => 180}
     end
 
     test "posts to the server's stop endpoint" do
@@ -77,21 +72,23 @@ defmodule ExUpcloud.ServersTest do
       assert URI.to_string(request.url) =~ "/1.3/server/#{@uuid}/stop"
     end
 
-    # The deploy pipeline relies on both of these: a window long enough for the
-    # BEAM to drain its Oban queues, and `destroy` so an overrunning shutdown
-    # still reaches `stopped` instead of abandoning the operation.
-    test "honours an explicit timeout and timeout_action" do
+    # The deploy pipeline needs a window long enough for the BEAM to drain its
+    # Oban queues. The exact-map assertions here are the point: `stop_server`
+    # rejects any attribute it does not know with `UNKNOWN_ATTRIBUTE`, and a
+    # subset match let a bogus `timeout_action` reach a real deploy.
+    test "honours an explicit timeout" do
       stub_response(200)
 
-      assert :ok = Servers.stop(@config, @uuid, timeout: 540, timeout_action: "destroy")
+      assert :ok = Servers.stop(@config, @uuid, timeout: 540)
 
-      assert %{
-               "stop_server" => %{
-                 "stop_type" => "soft",
-                 "timeout" => 540,
-                 "timeout_action" => "destroy"
-               }
-             } = emitted_body()
+      assert %{"stop_server" => stop_server} = emitted_body()
+      assert stop_server == %{"stop_type" => "soft", "timeout" => 540}
+    end
+
+    test "rejects timeout_action, which belongs to restart rather than stop" do
+      assert_raise NimbleOptions.ValidationError, fn ->
+        Servers.stop(@config, @uuid, timeout_action: "destroy")
+      end
     end
 
     test "supports a hard stop" do
@@ -109,10 +106,6 @@ defmodule ExUpcloud.ServersTest do
     end
 
     test "rejects values the API would reject anyway" do
-      assert_raise NimbleOptions.ValidationError, fn ->
-        Servers.stop(@config, @uuid, timeout_action: "shrug")
-      end
-
       assert_raise NimbleOptions.ValidationError, fn ->
         Servers.stop(@config, @uuid, stop_type: "gentle")
       end
